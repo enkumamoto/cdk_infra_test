@@ -260,17 +260,17 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-    Dev[Dev faz push na main] --> GitHub[GitHub Repo]
+    Dev["Dev faz push na main"] --> GitHub["GitHub Repo"]
 
-    GitHub --> Actions[GitHub Actions Workflow]
+    GitHub --> Actions["GitHub Actions Workflow"]
 
-    Actions --> Checkout[Checkout do código]
-    Checkout --> Auth[AWS Auth (OIDC)]
-    Auth --> Deps[Instala dependências]
-    Deps --> CDK[cdk deploy]
+    Actions --> Checkout["Checkout do código"]
+    Checkout --> Auth["AWS Auth (OIDC)"]
+    Auth --> Deps["Instala dependências"]
+    Deps --> CDK["cdk deploy"]
 
-    CDK --> CloudFormation[CloudFormation Stack]
-    CloudFormation --> Infra[Infra provisionada/atualizada]
+    CDK --> CloudFormation["CloudFormation Stack"]
+    CloudFormation --> Infra["Infra provisionada/atualizada"]
 ```
 
 ## 🧩 Fluxo do Deploy da Aplicação
