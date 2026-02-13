@@ -8,6 +8,7 @@ on:
       - "app.py"
       - "requirements.txt"
       - "cdk.json"
+  workflow_dispatch:
 
 jobs:
   deploy:

@@ -5,6 +5,7 @@ on:
     branches: ["main"]
     paths:
       - "puppet/**"
+  workflow_dispatch:
 
 jobs:
   sync:
