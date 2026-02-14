@@ -20,6 +20,13 @@ class CdkInfraTestStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs):
         super().__init__(scope, construct_id, **kwargs)
         
+        # Certificate
+        server_certificate_arn = self.node.try_get_context("server_certificate_arn")
+        client_certificate_arn = self.node.try_get_context("client_certificate_arn")
+        
+        if not server_certificate_arn or not client_certificate_arn:
+            raise ValueError("Inform certificates (Server and Client)")
+        
         # S3 Bucket
         self.puppet_bucket = s3.Bucket(
             self,
@@ -52,6 +59,56 @@ class CdkInfraTestStack(Stack):
             ],
         )
         
+        # VPN Sg
+        vpn_sg = ec2.SecurityGroup(
+            self,
+            "VpnSG",
+            vpc=self.vpc,
+            description="SG for VPN Connections",
+            allow_all_outbound=True,
+        )
+        
+        # VPN Client
+        client_vpn = ec2.CfnClientVpnEndpoint(
+            self,
+            "ClientVpnEndpoint",
+            authentication_options=[
+                ec2.CfnClientVpnEndpoint.ClientAuthenticationRequestProperty(
+                    type="certificate-authentication",
+                    mutual_authentication=ec2.CfnClientVpnEndpoint.CertificateAuthenticationRequestProperty(
+                        client_root_certificate_chain_arn=client_certificate_arn
+                        ),
+                    )
+                ],
+            client_cidr_block="10.100.0.0/22",
+            connection_log_options=ec2.CfnClientVpnEndpoint.ConnectionLogOptionsProperty(
+                enabled=False,
+                ),
+            server_certificate_arn=server_certificate_arn,
+            vpc_id=self.vpc.vpc_id,
+            security_group_ids=[vpn_sg.security_group_id],
+            split_tunnel=True,
+            transport_protocol="udp",
+        )
+        
+        # Private Subnet VPN Association
+        ec2.CfnClientVpnTargetNetworkAssociation(
+            self,
+            "VpnAssociation",
+            client_vpn_endpoint_id=client_vpn.ref,
+            subnet_id=self.vpc.private_subnets[0].subnet_id,
+        )
+        
+        # VPN Access Auth
+        ec2.CfnClientVpnAuthorizationRule(
+            self,
+            "VpnAuthRule",
+            client_vpn_endpoint_id=client_vpn.ref,
+            target_network_cidr_block=self.vpc.vpc_cidr_block,
+            authorize_all_groups=True,
+        )
+            
+        
         # Bastion SG
         bastion_sg = ec2.SecurityGroup(
             self,
@@ -59,6 +116,12 @@ class CdkInfraTestStack(Stack):
             vpc=self.vpc,
             description="SG for Bastion Hosts",
             allow_all_outbound=True,
+        )
+        
+        bastion_sg.add_ingress_rule(
+            peer = vpn_sg,
+            connection = ec2.Port.tcp(22),
+            description="Allow VPN access to Bastion via SSH",
         )
         
         # Bastion Role
@@ -318,4 +381,11 @@ class CdkInfraTestStack(Stack):
             self, 
             "PuppetBucketName", 
             value=self.puppet_bucket.bucket_name
-            )
+        )
+        
+        CfnOutput(
+            self,
+            "VpnEndpointId",
+            value=client_vpn.ref,
+            description="Client VPN Endpoint ID",
+        )
