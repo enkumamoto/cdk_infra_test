@@ -1,3 +1,4 @@
+````md
 # 📦 Projeto: Infraestrutura AWS com CDK, ECS, RDS, Puppet e FastAPI
 
 Este projeto provisiona uma infraestrutura completa na AWS utilizando AWS CDK (Python), integrando:
@@ -9,6 +10,7 @@ Este projeto provisiona uma infraestrutura completa na AWS utilizando AWS CDK (P
 - ECR
 - Application Load Balancer
 - Aplicação FastAPI
+- VPN Client-to-Site
 - Pipeline CI/CD com GitHub Actions
 
 ## 🗺️ Arquitetura
@@ -16,6 +18,7 @@ Este projeto provisiona uma infraestrutura completa na AWS utilizando AWS CDK (P
 ```mermaid
 flowchart TB
     User[Usuário / Internet] --> ALB[Application Load Balancer :80]
+    DevVPN[Usuário VPN] --> VPN[Client VPN Endpoint]
 
     subgraph AWS
         subgraph VPC
@@ -35,6 +38,9 @@ flowchart TB
         Secrets[Secrets Manager]
     end
 
+    VPN --> Bastion
+    VPN --> RDS
+
     ALB --> ECS
     ECS --> RDS
 
@@ -44,6 +50,7 @@ flowchart TB
 
     ECS --> ECR
 ```
+````
 
 ## 🧱 Componentes da Infraestrutura
 
@@ -63,12 +70,43 @@ Bucket responsável por armazenar os manifests e módulos Puppet.
   - Públicas (ALB)
   - Privadas com NAT (ECS, RDS, Bastion)
 
+### 🔐 VPN (Client-to-Site)
+
+VPN gerenciada pela AWS para acesso seguro ao ambiente privado.
+
+**Funções:**
+
+- Permite acesso ao Bastion Host sem IP público
+- Acesso privado ao banco de dados para administração
+- Autenticação baseada em certificado
+
+**Fluxo:**
+
+- Usuário se conecta via OpenVPN Client
+- Tráfego entra no Client VPN Endpoint
+- Encaminhado para subnets privadas
+- Acesso ao Bastion Host e RDS
+
+```mermaid
+sequenceDiagram
+    participant User as Usuário VPN
+    participant VPN as AWS Client VPN
+    participant Bastion as Bastion Host
+    participant RDS as Aurora DB
+
+    User->>VPN: Conexão TLS
+    VPN->>Bastion: Acesso privado
+    VPN->>RDS: Acesso PostgreSQL
+    Bastion->>RDS: Query
+```
+
 ### 🖥️ Bastion Host (EC2)
 
 Instância EC2 privada usada para:
 
 - Acesso administrativo via AWS SSM
 - Execução do Puppet
+- Acesso via VPN
 
 **Funções:**
 
@@ -88,10 +126,14 @@ puppet apply puppet/manifests/site.pp
 Banco de dados relacional:
 
 - Engine: Aurora PostgreSQL 14
+
 - Serverless (auto scaling)
+
 - Acesso permitido apenas:
   - Bastion Host
   - ECS
+  - VPN
+
 - Credenciais:
   - Geradas automaticamente pelo Secrets Manager
 
@@ -109,6 +151,7 @@ Executa a aplicação FastAPI como container.
 - Variáveis de ambiente:
   - DB_NAME
   - DB_HOST
+
 - Secrets:
   - DB_USER
   - DB_PASSWORD
@@ -182,6 +225,7 @@ Pipeline responsável por:
    ```
 
 3. **Deploy da infra**
+
    ```
    cdk deploy
    ```
@@ -204,6 +248,7 @@ Ao final do deploy:
 - ✔️ Infra como código (CDK)
 - ✔️ Automatização com Puppet
 - ✔️ CI/CD com GitHub Actions
+- ✔️ Acesso seguro via VPN
 
 ## 🧠 Tecnologias
 
@@ -214,6 +259,7 @@ Ao final do deploy:
 - Puppet
 - Docker
 - GitHub Actions
+- OpenVPN / AWS Client VPN
 
 ## 📌 Observações
 
@@ -223,6 +269,7 @@ Este projeto é didático e demonstra:
 - Infra automatizada
 - Configuração automática via Puppet
 - Deploy contínuo com pipeline
+- Acesso privado seguro via VPN
 
 ## 🔁 Fluxo de Inicialização (Boot)
 
