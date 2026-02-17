@@ -2,7 +2,7 @@ name: Build & Deploy FastAPI
 
 on:
   push:
-    branches: ["master"]
+    branches: ["main"]
     paths:
       - "app_fastapi/**"
   workflow_dispatch:

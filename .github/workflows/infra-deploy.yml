@@ -9,6 +9,14 @@ on:
       - "requirements.txt"
       - "cdk.json"
   workflow_dispatch:
+    inputs:
+      action:
+        description: CDK action
+        required: true
+        type: choice
+        options:
+          - synth
+          - deploy
 
 jobs:
   deploy:
@@ -37,5 +45,14 @@ jobs:
           pip install -r requirements.txt
           npm install -g aws-cdk
 
+      - name: Synth CDK
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'synth')
+          || github.event_name == 'push'
+        run: cdk synth
+
       - name: Deploy CDK
+        if: |
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.action == 'deploy')
+          || github.event_name == 'push'
         run: cdk deploy --require-approval never
