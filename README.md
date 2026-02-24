@@ -224,6 +224,7 @@ Pipeline responsável por:
 3. **Deploy da infra**
 
    ```bash
+   cdk synth
    cdk deploy
    ```
 
