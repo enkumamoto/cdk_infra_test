@@ -214,12 +214,12 @@ pip install -r requirements.txt
 npm install -g aws-cdk
 CDK Bootstrap
 ```
-
+2. **CDK Bootstrap**
 ```bash
 cdk bootstrap
 Deploy infrastructure
 ```
-
+3. **Deploy**
 ```bash
 cdk synth
 cdk deploy
@@ -236,13 +236,13 @@ At the end of deployment:
 - Puppet bucket name
 
 ## 🔐 Best Practices Implemented
-- ✔️ Private subnets
-- ✔️ No public IP on ECS
-- ✔️ Credentials in Secrets Manager
-- ✔️ Infrastructure as code (CDK)
-- ✔️ Automation with Puppet
-- ✔️ CI/CD with GitHub Actions
-- ✔️ Secure access via VPN
+✔️ Private subnets
+✔️ No public IP on ECS
+✔️ Credentials in Secrets Manager
+✔️ Infrastructure as code (CDK)
+✔️ Automation with Puppet
+✔️ CI/CD with GitHub Actions
+✔️ Secure access via VPN
 
 ## 🧠 Technologies
 
