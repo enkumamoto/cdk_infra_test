@@ -240,13 +240,13 @@ Ao final do deploy:
 
 ## 🔐 Boas práticas implementadas
 
-- ✔️ Subnets privadas
-- ✔️ Sem IP público no ECS
-- ✔️ Credenciais no Secrets Manager
-- ✔️ Infra como código (CDK)
-- ✔️ Automatização com Puppet
-- ✔️ CI/CD com GitHub Actions
-- ✔️ Acesso seguro via VPN
+✔️ Subnets privadas
+✔️ Sem IP público no ECS
+✔️ Credenciais no Secrets Manager
+✔️ Infra como código (CDK)
+✔️ Automatização com Puppet
+✔️ CI/CD com GitHub Actions
+✔️ Acesso seguro via VPN
 
 ## 🧠 Tecnologias
 
