@@ -8,7 +8,6 @@ from aws_cdk import (
     aws_ecs as ecs,
     aws_ecr as ecr,
     aws_s3 as s3,
-    aws_iam as iam,
     aws_elasticloadbalancingv2 as elbv2,
     aws_acmpca as acmpca,
     aws_certificatemanager as acm,
@@ -208,7 +207,7 @@ class CdkInfraTestStack(Stack):
             "yum install -y puppet",
             "cd /home/ec2-user",
             f"aws s3 sync s3://{self.puppet_bucket.bucket_name}/puppet /opt/puppet",
-            "puppet apply puppet/manifests/site.pp"
+            "puppet apply /opt/puppet/manifests/site.pp"
         )
         
         # RDS SG
@@ -424,8 +423,22 @@ class CdkInfraTestStack(Stack):
         )
         
         CfnOutput(
-            self, 
-            "PuppetBucketName", 
+            self,
+            "EcsClusterName",
+            value=self.ecs_cluster.cluster_name,
+            description="ECS Cluster Name",
+        )
+
+        CfnOutput(
+            self,
+            "EcsServiceName",
+            value=service.service_name,
+            description="ECS Service Name",
+        )
+
+        CfnOutput(
+            self,
+            "PuppetBucketName",
             value=self.puppet_bucket.bucket_name
         )
         

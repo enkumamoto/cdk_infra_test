@@ -31,7 +31,7 @@ jobs:
             --query "Stacks[0].Outputs[?OutputKey=='PuppetBucketName'].OutputValue" \
             --output text)
 
-          echo "PUPPET_BUCKET=$BUCKET" >> $GITHUB_ENV
+          echo "PUPPET_BUCKET=$PUPPET_BUCKET" >> $GITHUB_ENV
 
       - name: Sync Puppet files to S3
         run: |
@@ -39,9 +39,9 @@ jobs:
 
       - name: Reboot Bastion Host
         run: |
-          INSTANCE_ID=$(aws ec2 describe-instances \
-            --filters "Name=tag:Name,Values=devops-test-bastion" \
-            --query "Reservations[0].Instances[0].InstanceId" \
+          INSTANCE_ID=$(aws cloudformation describe-stacks \
+            --stack-name CdkInfraTestStack \
+            --query "Stacks[0].Outputs[?OutputKey=='BastionInstanceID'].OutputValue" \
             --output text)
 
           aws ec2 reboot-instances --instance-ids $INSTANCE_ID

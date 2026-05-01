@@ -44,9 +44,22 @@ jobs:
           docker push \
             ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.us-east-1.amazonaws.com/apprepository:latest
 
+      - name: Get ECS resource names from CloudFormation
+        run: |
+          ECS_CLUSTER=$(aws cloudformation describe-stacks \
+            --stack-name CdkInfraTestStack \
+            --query "Stacks[0].Outputs[?OutputKey=='EcsClusterName'].OutputValue" \
+            --output text)
+          ECS_SERVICE=$(aws cloudformation describe-stacks \
+            --stack-name CdkInfraTestStack \
+            --query "Stacks[0].Outputs[?OutputKey=='EcsServiceName'].OutputValue" \
+            --output text)
+          echo "ECS_CLUSTER=$ECS_CLUSTER" >> $GITHUB_ENV
+          echo "ECS_SERVICE=$ECS_SERVICE" >> $GITHUB_ENV
+
       - name: Force new ECS deployment
         run: |
           aws ecs update-service \
-            --cluster AppCluster \
-            --service AppService \
+            --cluster $ECS_CLUSTER \
+            --service $ECS_SERVICE \
             --force-new-deployment
