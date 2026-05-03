@@ -34,3 +34,8 @@
 - Toda senha/token vai para o Secrets Manager
 - Security Groups devem ter o menor escopo possível
 - Sem `0.0.0.0/0` em inbound de recursos privados
+
+## Sempre que houver atualizações em qualquer código
+
+- O README.md deve ser atualizado com as novas modificações
+- O README-EN.md também deve receber as atualizações de conteúdo

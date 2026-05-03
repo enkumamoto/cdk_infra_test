@@ -1,4 +1,4 @@
 node default {
-  include user
+  include users
   include phpmyadmin
 }

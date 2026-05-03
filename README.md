@@ -1,18 +1,19 @@
-# 📦 Projeto: Infraestrutura AWS com CDK, ECS, RDS, Puppet e FastAPI
+# Projeto: Infraestrutura AWS com CDK, ECS, RDS, Puppet e FastAPI
 
-Este projeto provisiona uma infraestrutura completa na AWS utilizando AWS CDK (Python), integrando:
+Este projeto provisiona uma infraestrutura **pronta para produção** na AWS utilizando AWS CDK (Python), integrando:
 
-- VPC com subnets públicas e privadas
-- EC2 Bastion Host com Puppet
-- RDS Aurora PostgreSQL Serverless v2
-- ECS Fargate
-- ECR
-- Application Load Balancer
-- Aplicação FastAPI
-- VPN Client-to-Site
+- VPC multi-AZ com NAT Gateway redundante
+- EC2 Bastion Host com Puppet e IMDSv2
+- RDS Aurora PostgreSQL Serverless v2 com backup e proteção contra deleção
+- ECS Fargate com alta disponibilidade e auto-scaling
+- ECR com lifecycle rules
+- Application Load Balancer com deletion protection
+- Aplicação FastAPI com connection pooling e error handling
+- VPN Client-to-Site com logs de conexão
+- Monitoramento via CloudWatch Alarms
 - Pipeline CI/CD com GitHub Actions
 
-## 🗺️ Arquitetura
+## Arquitetura
 
 ```mermaid
 flowchart TB
@@ -21,68 +22,66 @@ flowchart TB
 
     subgraph AWS
         subgraph VPC
-            subgraph PublicSubnet
+            subgraph PublicSubnet-AZ1
                 ALB
+                NAT1[NAT Gateway AZ1]
+            end
+            subgraph PublicSubnet-AZ2
+                NAT2[NAT Gateway AZ2]
             end
 
             subgraph PrivateSubnet
-                ECS[ECS Fargate Service]
+                ECS[ECS Fargate - 2 tasks]
                 Bastion[Bastion Host EC2]
-                RDS[(Aurora PostgreSQL)]
+                RDS[(Aurora PostgreSQL\nwriter + reader)]
             end
         end
 
         S3[S3 Puppet Bucket]
         ECR[ECR Repository]
         Secrets[Secrets Manager]
+        CW[CloudWatch Alarms]
     end
 
     VPN --> Bastion
-
     ALB --> ECS
     ECS --> RDS
-
     ECS --> Secrets
     Bastion --> RDS
     Bastion --> S3
-
     ECS --> ECR
+    ECS --> CW
+    RDS --> CW
 ```
 
-## 🧱 Componentes da Infraestrutura
+## Componentes da Infraestrutura
 
-### 🪣 S3 (Puppet Bucket)
+### S3 (Puppet Bucket)
 
 Bucket responsável por armazenar os manifests e módulos Puppet.
 
-**Função:**
+- Versionamento habilitado
+- Criptografia gerenciada pela AWS
+- Acesso público totalmente bloqueado
+- Política de retenção: dados preservados mesmo após remoção da stack
+- Lifecycle: versões antigas expiram após 90 dias
 
-- Centralizar os arquivos de configuração
-- Permitir que o Bastion Host sincronize os manifests automaticamente
-
-### 🌐 VPC
+### VPC
 
 - 2 AZs
-- Subnets:
-  - Públicas (ALB)
-  - Privadas com NAT (ECS, RDS, Bastion)
+- **2 NAT Gateways** (alta disponibilidade por zona)
+- Subnets públicas (ALB, NAT)
+- Subnets privadas com egresso (ECS, RDS, Bastion)
+- **VPC Flow Logs** habilitados para auditoria de tráfego
 
-### 🔐 VPN (Client-to-Site)
+### VPN (Client-to-Site)
 
 VPN gerenciada pela AWS para acesso seguro ao ambiente privado.
 
-**Funções:**
-
-- Permite acesso ao Bastion Host sem IP público
-- Acesso privado ao banco de dados para administração
-- Autenticação baseada em certificado
-
-**Fluxo:**
-
-- Usuário se conecta via OpenVPN Client
-- Tráfego entra no Client VPN Endpoint
-- Encaminhado para subnets privadas
-- Acesso ao Bastion Host e RDS
+- Acesso ao Bastion Host sem IP público
+- Autenticação baseada em certificado mútuo
+- Split tunnel habilitado
+- **Logs de conexão** no CloudWatch (retenção de 3 meses)
 
 ```mermaid
 sequenceDiagram
@@ -91,122 +90,192 @@ sequenceDiagram
     participant Bastion as Bastion Host
     participant RDS as Aurora DB
 
-    User->>VPN: Conexão TLS
-    VPN->>Bastion: Acesso privado
+    User->>VPN: Conexão TLS + certificado
+    VPN->>Bastion: Acesso privado (SSH)
     VPN->>RDS: Acesso PostgreSQL
     Bastion->>RDS: Query
 ```
 
-### 🖥️ Bastion Host (EC2)
+### Bastion Host (EC2)
 
-Instância EC2 privada usada para:
+Instância EC2 privada usada para acesso administrativo.
 
-- Acesso administrativo via AWS SSM
-- Execução do Puppet
-- Acesso via VPN
+- Tipo: `t3.small`
+- **IMDSv2 obrigatório** (proteção contra SSRF)
+- Acesso via AWS SSM (sem abertura de portas públicas)
+- Acesso SSH liberado apenas pela SG da VPN
 
-**Funções:**
+**Inicialização automática:**
 
-- Instala o Puppet
-- Sincroniza arquivos do S3
-- Aplica os manifests automaticamente no boot
-
-**Trecho executado:**
-
-```
+```bash
 aws s3 sync s3://<bucket>/puppet /opt/puppet
-puppet apply puppet/manifests/site.pp
+puppet apply /opt/puppet/manifests/site.pp
 ```
 
-### 🗄️ RDS Aurora PostgreSQL Serverless v2
+### RDS Aurora PostgreSQL Serverless v2
 
-Banco de dados relacional:
+| Configuração | Valor |
+|---|---|
+| Engine | Aurora PostgreSQL 14 |
+| Capacidade mínima | 0.5 ACU |
+| Capacidade máxima | 8 ACU |
+| Backup | 7 dias de retenção |
+| Deletion protection | Habilitado |
+| Remoção da stack | Snapshot preservado |
+| Enhanced Monitoring | 60s interval |
+| Logs exportados | PostgreSQL → CloudWatch |
+| Criptografia | Habilitada |
+| Credenciais | Geradas pelo Secrets Manager |
 
-- Engine: Aurora PostgreSQL 14
+### ECR (Elastic Container Registry)
 
-- Serverless (auto scaling)
+- Scan de vulnerabilidades a cada push
+- Política de retenção: imagens preservadas após remoção da stack
+- Lifecycle rules:
+  - Imagens sem tag removidas após 1 dia
+  - Máximo de 10 imagens por repositório
 
-- Acesso permitido apenas:
-  - Bastion Host
-  - ECS
-  - VPN
+### ECS Fargate
 
-- Credenciais:
-  - Geradas automaticamente pelo Secrets Manager
+Executa a aplicação FastAPI com alta disponibilidade.
 
-### 🐳 ECR (Elastic Container Registry)
+| Configuração | Valor |
+|---|---|
+| CPU por task | 512 units (0.5 vCPU) |
+| Memória por task | 1024 MiB |
+| Tasks desejadas | 2 (mínimo) |
+| Auto-scaling | min=2, max=10 |
+| Escalonamento por CPU | target 70% |
+| Escalonamento por memória | target 80% |
+| Circuit breaker | Habilitado com rollback automático |
+| Container Insights | Habilitado |
+| Container health check | `GET /health` a cada 30s |
 
-Repositório para armazenar a imagem Docker da aplicação FastAPI.
+**Papéis IAM separados:**
+- **Execution Role**: pull de imagem ECR + injeção de secrets (princípio do menor privilégio)
+- **Task Role**: apenas escrita de logs no CloudWatch
 
-### 🚀 ECS Fargate
+**Variáveis injetadas:**
 
-Executa a aplicação FastAPI como container.
+| Variável | Origem |
+|---|---|
+| `DB_NAME` | Environment variable |
+| `DB_HOST` | Environment variable |
+| `DB_USER` | Secrets Manager |
+| `DB_PASSWORD` | Secrets Manager |
 
-**Configuração:**
-
-- Task Definition
-- Variáveis de ambiente:
-  - DB_NAME
-  - DB_HOST
-
-- Secrets:
-  - DB_USER
-  - DB_PASSWORD
-
-### ⚖️ Application Load Balancer (ALB)
+### Application Load Balancer (ALB)
 
 - Porta: 80
 - Roteia requisições para ECS
-- Health check: `/health`
+- Health check: `GET /health` (threshold: 2 healthy / 3 unhealthy)
+- Deregistration delay: 30s
+- **Deletion protection** habilitado
 
-## 🧩 Aplicação FastAPI
+### CloudWatch Alarms
+
+| Alarme | Threshold | Períodos |
+|---|---|---|
+| ECS CPU | > 85% | 3 de 3 |
+| ECS Memory | > 90% | 3 de 3 |
+| ALB Response Time | > 2s | 2 de 2 |
+
+## Aplicação FastAPI
 
 **Local:** `app_fastapi/`
 
-**Função:**
+**Endpoints:**
 
-- API REST
-- Conectada ao banco PostgreSQL
-- Exposta via ALB
+| Método | Path | Descrição |
+|---|---|---|
+| GET | `/health` | Health check com verificação de conectividade ao banco |
+| POST | `/items` | Insere um item (body JSON: `{"name": "..."}`) |
+| GET | `/items` | Lista itens (query param: `limit`, padrão 50) |
 
-**Exemplo de endpoint:**
+**Funcionalidades de produção:**
 
-- GET `/health`
+- Connection pool (`ThreadedConnectionPool`, min=1, max=10)
+- Error handling com rollback de transação
+- Logging estruturado
+- Validação de input via Pydantic
+- Schema da tabela criado automaticamente no startup
+- Health check valida conectividade real com o banco
 
-## 🧙 Puppet
+**Exemplo de uso:**
+
+```bash
+# Health check
+curl http://<ALB-DNS>/health
+
+# Criar item
+curl -X POST http://<ALB-DNS>/items \
+  -H "Content-Type: application/json" \
+  -d '{"name": "meu-item"}'
+
+# Listar itens
+curl "http://<ALB-DNS>/items?limit=10"
+```
+
+## Dockerfile
+
+- Imagem base: `python:3.11-slim`
+- **Usuário non-root** (`appuser`)
+- **HEALTHCHECK** nativo do Docker
+- Uvicorn com 2 workers
+
+## Puppet
 
 **Estrutura:**
 
-```bash
+```
 puppet/
-├── manifests
+├── manifests/
 │   └── site.pp
-└── modules
-    ├── users
-    └── phpmyadmin
+└── modules/
+    ├── users/
+    │   └── manifests/init.pp
+    └── phpmyadmin/
+        └── manifests/init.pp
 ```
 
-**Funções:**
+**Módulos:**
 
-- Criação de usuários
-- Instalação de pacotes
-- Configuração automática da instância
-- Aplicado automaticamente no Bastion Host.
+- `users`: cria o usuário `adminuser` com diretório `.ssh`
+- `phpmyadmin`: instala `httpd`, `php` e `phpmyadmin`
 
-## ⚙️ GitHub Actions (Workflow)
+## GitHub Actions (Workflows)
 
-Pipeline responsável por:
+### Infra Deploy (`infra-deploy.yml`)
 
-- Autenticar na AWS via OIDC
-- Instalar dependências
-- Executar: `cdk deploy --require-approval never`
+Disparado por push em `cdk_infra_test/`, `app.py`, `requirements.txt` ou `cdk.json`.
 
-**Disparos:**
+```
+Checkout → AWS OIDC Auth → cdk synth → cdk deploy
+```
 
-- Push na branch main
-- Manual (workflow_dispatch)
+### App Build & Push (`app-build-push.yml`)
 
-## ▶️ Como executar
+Disparado por push em `app_fastapi/`.
+
+```
+Checkout → AWS OIDC Auth → ECR URI do CloudFormation
+→ Build Docker → Tag com git SHA + latest
+→ Push ECR → ECS force deploy → Aguarda estabilização
+```
+
+- URI do ECR obtido dinamicamente dos outputs do CloudFormation (sem hardcode)
+- Imagem tagueada com `git SHA` para rastreabilidade e `latest` para conveniência
+- `aws ecs wait services-stable` garante que o deploy estabilizou antes de reportar sucesso
+
+### Puppet Sync (`puppet-sync.yml`)
+
+Disparado por push em `puppet/`.
+
+```
+Checkout → AWS OIDC Auth → S3 sync → Reboot Bastion
+```
+
+## Como executar
 
 1. **Instalar dependências**
 
@@ -215,61 +284,96 @@ Pipeline responsável por:
    npm install -g aws-cdk
    ```
 
-2. **Bootstrap do CDK**
+2. **Bootstrap do CDK** (apenas na primeira vez)
 
    ```bash
    cdk bootstrap
    ```
 
-3. **Deploy da infra**
+3. **Validar síntese**
 
    ```bash
    cdk synth
+   ```
+
+4. **Deploy da infra**
+
+   ```bash
    cdk deploy
    ```
 
-## 📤 Outputs
+5. **Rodar os testes**
 
-Ao final do deploy:
+   ```bash
+   pip install -r requirements-dev.txt
+   pytest
+   ```
 
-- URL pública da aplicação
-- ID da instância Bastion
-- Endpoint do banco
-- ARN do Secret
-- Nome do bucket Puppet
+## Outputs do CloudFormation
 
-## 🔐 Boas práticas implementadas
+| Output | Descrição |
+|---|---|
+| `ApplicationURL` | URL pública da aplicação |
+| `BastionInstanceID` | ID da instância Bastion |
+| `DatabaseClusterEndpoint` | Endpoint do cluster Aurora |
+| `DatabaseName` | Nome do banco (`appdb`) |
+| `DatabaseSecretArn` | ARN do secret com credenciais |
+| `EcsClusterName` | Nome do cluster ECS |
+| `EcsServiceName` | Nome do service ECS |
+| `EcrRepositoryUri` | URI do repositório ECR |
+| `PuppetBucketName` | Nome do bucket Puppet |
+| `VpnEndpointId` | ID do endpoint VPN |
 
-✔️ Subnets privadas
-✔️ Sem IP público no ECS
-✔️ Credenciais no Secrets Manager
-✔️ Infra como código (CDK)
-✔️ Automatização com Puppet
-✔️ CI/CD com GitHub Actions
-✔️ Acesso seguro via VPN
+## Boas práticas implementadas
 
-## 🧠 Tecnologias
+**Rede e acesso:**
+- Subnets privadas para todos os workloads
+- Sem IP público no ECS
+- Acesso administrativo exclusivo via VPN + SSM
+- IMDSv2 obrigatório no Bastion
+- VPC Flow Logs habilitados
 
-- AWS CDK (Python)
-- FastAPI
+**Banco de dados:**
+- Credenciais gerenciadas pelo Secrets Manager
+- Deletion protection habilitado
+- Backup com 7 dias de retenção
+- Snapshot preservado ao deletar a stack
+- Criptografia em repouso habilitada
+- Enhanced monitoring e logs exportados
+
+**Aplicação:**
+- Roles IAM com menor privilégio (execution role ≠ task role)
+- Connection pool para eficiência
+- Circuit breaker com rollback automático
+- Auto-scaling baseado em métricas reais
+
+**Imagens:**
+- Usuário non-root no container
+- Scan de vulnerabilidades no ECR
+- Lifecycle rules para evitar acúmulo de imagens
+
+**Rastreabilidade:**
+- Imagens tagueadas com git SHA
+- VPN com logs de conexão
+- CloudWatch Alarms para CPU, memória e latência
+
+**IaC e pipeline:**
+- Infraestrutura 100% como código (CDK)
+- CI/CD com OIDC (sem credenciais de longa duração)
+- Deploy aguarda estabilização do ECS
+
+## Tecnologias
+
+- AWS CDK v2 (Python)
+- FastAPI + Uvicorn
 - ECS Fargate
-- Aurora PostgreSQL
+- Aurora PostgreSQL Serverless v2
 - Puppet
 - Docker
 - GitHub Actions
-- OpenVPN / AWS Client VPN
+- AWS Client VPN
 
-## 📌 Observações
-
-Este projeto é didático e demonstra:
-
-- Integração de Infra + App
-- Infra automatizada
-- Configuração automática via Puppet
-- Deploy contínuo com pipeline
-- Acesso privado seguro via VPN
-
-## 🔁 Fluxo de Inicialização (Boot)
+## Fluxo de Inicialização do Bastion (Boot)
 
 ```mermaid
 sequenceDiagram
@@ -280,11 +384,11 @@ sequenceDiagram
 
     EC2->>S3: aws s3 sync /puppet
     EC2->>Puppet: puppet apply site.pp
-    Puppet->>EC2: Configura sistema
+    Puppet->>EC2: Configura sistema (users, phpmyadmin)
     EC2->>RDS: Testa conectividade
 ```
 
-## 🚀 Fluxo da Aplicação (Request)
+## Fluxo da Aplicação (Request)
 
 ```mermaid
 sequenceDiagram
@@ -294,38 +398,34 @@ sequenceDiagram
     participant RDS
 
     User->>ALB: HTTP Request
-    ALB->>ECS: Forward
-    ECS->>RDS: Query
+    ALB->>ECS: Forward (health check passa)
+    ECS->>RDS: Query via connection pool
     RDS->>ECS: Response
-    ECS->>ALB: HTTP 200
+    ECS->>ALB: HTTP 200 + JSON
     ALB->>User: JSON Response
 ```
 
-## ⚙️ Fluxo do Pipeline (GitHub Actions)
+## Fluxo do Deploy da Aplicação
 
 ```mermaid
 flowchart LR
-    Dev["Dev faz push na main"] --> GitHub["GitHub Repo"]
-
-    GitHub --> Actions["GitHub Actions Workflow"]
-
-    Actions --> Checkout["Checkout do código"]
-    Checkout --> Auth["AWS Auth (OIDC)"]
-    Auth --> Deps["Instala dependências"]
-    Deps --> CDK["cdk deploy"]
-
-    CDK --> CloudFormation["CloudFormation Stack"]
-    CloudFormation --> Infra["Infra provisionada/atualizada"]
+    Dev["Push em app_fastapi/"] --> Build["Build Docker\n+ tag git SHA"]
+    Build --> Push["Push para ECR\n(SHA + latest)"]
+    Push --> Deploy["ECS force deploy\n+ circuit breaker"]
+    Deploy --> Wait["aws ecs wait\nservices-stable"]
+    Wait --> Done["Deploy concluído"]
 ```
 
-## 🧩 Fluxo do Deploy da Aplicação
+## Fluxo do Pipeline de Infra
 
 ```mermaid
 flowchart LR
-    Dev --> Build[Build da imagem Docker]
-    Build --> Push[ECR]
-    Push --> ECS[ECS Fargate]
-
-    ECS -->|Nova task| ALB
-    ALB --> User
+    Dev["Push em cdk_infra_test/"] --> GitHub["GitHub Repo"]
+    GitHub --> Actions["GitHub Actions"]
+    Actions --> Checkout["Checkout"]
+    Checkout --> Auth["AWS Auth (OIDC)"]
+    Auth --> Synth["cdk synth"]
+    Synth --> Deploy["cdk deploy"]
+    Deploy --> CFN["CloudFormation Stack"]
+    CFN --> Infra["Infra atualizada"]
 ```
